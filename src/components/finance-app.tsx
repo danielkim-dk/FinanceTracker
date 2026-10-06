@@ -193,7 +193,11 @@ function AuthForm({ client }: { client: SupabaseClient }) {
     setMessage("");
     try {
       const result = signup
-        ? await client.auth.signUp({ email: email.trim(), password })
+        ? await client.auth.signUp({
+            email: email.trim(),
+            password,
+            options: { emailRedirectTo: window.location.origin },
+          })
         : await client.auth.signInWithPassword({
             email: email.trim(),
             password,

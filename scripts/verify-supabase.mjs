@@ -124,17 +124,21 @@ try {
   assert.equal((await a.client.from("entries").insert(many)).error, null);
   const oldRow = { ...row, id: randomUUID(), occurred_on: "2024-09-01", amount_cents: 1000, description: "History fixture" };
   assert.equal((await a.client.from("entries").insert(oldRow)).error, null);
+  const newestRow = { ...row, id: "00000000-0000-4000-8000-000000000001", amount_cents: 1, description: "Newest same-date input fixture" };
+  assert.equal((await a.client.from("entries").insert(newestRow)).error, null);
   const bSalary = (await b.client.from("categories").select("id").eq("label", "Salary").single()).data.id;
   const bRow = { ...oldRow, id: randomUUID(), category_id: bSalary, amount_cents: 733 };
   assert.equal((await b.client.from("entries").insert(bRow)).error, null);
   const rows = await fetchEntries(a.client, a.id, "2026-10-01", "2026-11-01", new AbortController().signal);
-  assert.equal(rows.length, 1006, "All pages are required above the API response limit.");
-  assert.equal(rows.reduce((total, entry) => total + entry.amountCents, 0), 11030);
+  assert.equal(rows.length, 1007, "All pages are required above the API response limit.");
+  assert.equal(rows[0].id, newestRow.id, "The newest same-date input comes first even with a lower UUID.");
+  assert.equal(rows.at(-1).id, row.id, "The oldest same-date input remains last across pages.");
+  assert.equal(rows.reduce((total, entry) => total + entry.amountCents, 0), 11031);
   const allRows = await fetchEntries(a.client, a.id, null, null, new AbortController().signal);
-  assert.equal(allRows.length, 1007, "All dates includes paginated history beyond the dashboard's twelve-month range.");
-  assert.equal(allRows[0].id, oldRow.id);
-  assert.equal(allRows.reduce((total, entry) => total + entry.amountCents, 0), 12030);
-  assert.deepEqual(allRows.map((entry) => entry.id), [oldRow.id, ...rows.map((entry) => entry.id)], "History preserves stable date and ID ordering across pages.");
+  assert.equal(allRows.length, 1008, "All dates includes paginated history beyond the dashboard's twelve-month range.");
+  assert.equal(allRows.at(-1).id, oldRow.id, "A newly input backdated entry remains below entries with a later transaction date.");
+  assert.equal(allRows.reduce((total, entry) => total + entry.amountCents, 0), 12031);
+  assert.deepEqual(allRows.map((entry) => entry.id), [...rows.map((entry) => entry.id), oldRow.id], "History preserves descending date and input order across pages.");
   const beforeMonth = await fetchEntries(a.client, a.id, null, "2026-10-01", new AbortController().signal);
   assert.deepEqual(beforeMonth.map((entry) => entry.id), [oldRow.id], "An upper bound remains exclusive when the lower bound is absent.");
   const afterMonth = await fetchEntries(a.client, a.id, "2026-10-01", null, new AbortController().signal);
@@ -150,7 +154,7 @@ try {
   assert.deepEqual((await a.client.from("entries").select("*").eq("id", row.id)).data, []);
   await a.client.auth.signOut();
   assert.ok((await a.client.from("entries").select("*")).error, "Signout removes authenticated access.");
-  console.log("PASS. Local auth, ledger CRUD, category creation/rename/removal/restore, private defaults, fixed types, RLS/FK isolation, atomic batches, retry safety, 1,006-row month pagination and 1,007-row private all-dates history.");
+  console.log("PASS. Local auth, ledger CRUD, category creation/rename/removal/restore, private defaults, fixed types, RLS/FK isolation, atomic batches, retry safety, descending date and input order, 1,007-row month pagination and 1,008-row private all-dates history.");
 } finally {
   for (const id of users) {
     const { error } = await admin.auth.admin.deleteUser(id);

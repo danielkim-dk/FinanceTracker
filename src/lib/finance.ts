@@ -172,16 +172,14 @@ export function filterEntries(
   filters: { month: string | null; kind: EntryKind | "all"; search: string },
 ) {
   const search = filters.search.trim().toLowerCase();
-  return entries
-    .filter(
-      (entry) =>
-        (!filters.month || entry.date.startsWith(filters.month)) &&
-        (filters.kind === "all" || entry.category.kind === filters.kind) &&
-        `${entry.description} ${entry.category.label} ${entry.date} ${money(entry.amountCents)}`
-          .toLowerCase()
-          .includes(search),
-    )
-    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  return entries.filter(
+    (entry) =>
+      (!filters.month || entry.date.startsWith(filters.month)) &&
+      (filters.kind === "all" || entry.category.kind === filters.kind) &&
+      `${entry.description} ${entry.category.label} ${entry.date} ${money(entry.amountCents)}`
+        .toLowerCase()
+        .includes(search),
+  );
 }
 
 export function paginateEntries(entries: Entry[], requestedPage: number) {

@@ -183,8 +183,9 @@ export async function fetchEntries(
     if (from !== null) query = query.gte("occurred_on", from);
     if (until !== null) query = query.lt("occurred_on", until);
     const { data, error } = await query
-      .order("occurred_on", { ascending: true })
-      .order("id", { ascending: true })
+      .order("occurred_on", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
       .range(start, start + pageSize - 1)
       .abortSignal(signal);
     if (error) throw new Error(error.message);

@@ -20,7 +20,7 @@ Apply both migrations to that project in order before using the app:
 1. `supabase/migrations/20261006183000_create_ledger.sql`
 2. `supabase/migrations/20261006185000_owned_categories.sql`
 
-These create the tables, per-account categories, and row-level security policies. Environment variables alone do not install the database schema. In Supabase Auth URL Configuration, set Site URL to your deployed app URL and add the local URL or preview URLs you intend to use to the allowed redirect URLs. Configure hosted email confirmation and delivery for your project. Local accounts and entries remain in the local database; connecting a hosted project does not copy them.
+These create the tables, per-account categories, and row-level security policies. Environment variables alone do not install the database schema. In Supabase Auth URL Configuration, set Site URL to your deployed app URL and add it to Redirect URLs, along with the local URL or preview URLs you intend to use. Signup requests a confirmation redirect to the app origin where signup started. For this project's local server, allow `http://127.0.0.1:3100`. Configure hosted email confirmation and delivery for your project. Local accounts and entries remain in the local database; connecting a hosted project does not copy them.
 
 See the [Supabase Next.js setup](https://supabase.com/docs/guides/getting-started/quickstarts/nextjs), [Auth redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls), and [Vercel environment variables](https://vercel.com/docs/environment-variables).
 

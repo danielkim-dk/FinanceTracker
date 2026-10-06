@@ -274,13 +274,13 @@ test("monthly summaries support one month and calendar YTD, exclusions, and nega
   );
 });
 
-test("transaction filters include all history, compose month/type/search, and sort dates with stable ties", () => {
+test("transaction filters include all history and compose month/type/search while preserving date and input order", () => {
   const history = entry({ ...categories[1], archived: true }, 1230, "2024-09-01", "Historic market");
   const salary = entry(categories[0], 620000, "2026-10-01", "Salary");
-  const groceries = { ...entry(categories[1], 259200, "2026-10-06", "October groceries"), id: "001" };
-  const refund = { ...entry(categories[0], 10000, "2026-10-06", "Refund"), id: "009" };
+  const groceries = { ...entry(categories[1], 259200, "2026-10-06", "October groceries"), id: "009" };
+  const refund = { ...entry(categories[0], 10000, "2026-10-06", "Refund"), id: "001" };
   const future = entry(categories[2], 100000, "2026-11-01", "Brokerage");
-  const input = [history, salary, groceries, refund, future];
+  const input = [future, refund, groceries, salary, history];
   assert.deepEqual(filterEntries(input, { month: null, kind: "all", search: "" }), [future, refund, groceries, salary, history]);
   assert.deepEqual(filterEntries(input, { month: "2026-10", kind: "all", search: "" }), [refund, groceries, salary]);
   assert.deepEqual(filterEntries(input, { month: null, kind: "expense", search: "" }), [groceries, history]);
@@ -289,7 +289,7 @@ test("transaction filters include all history, compose month/type/search, and so
     assert.deepEqual(filterEntries(input, { month: null, kind: "all", search }), [history]);
   assert.deepEqual(filterEntries(input, { month: null, kind: "expense", search: "groceries" }), [groceries, history]);
   assert.deepEqual(filterEntries(input, { month: "2026-10", kind: "investment", search: "" }), []);
-  assert.deepEqual(input, [history, salary, groceries, refund, future]);
+  assert.deepEqual(input, [future, refund, groceries, salary, history]);
 });
 
 test("transaction pages show 25 rows, clamp after removals, and leave full results available for totals and CSV", () => {
