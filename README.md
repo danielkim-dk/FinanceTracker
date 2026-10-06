@@ -34,11 +34,17 @@ Use [Supabase Studio](http://127.0.0.1:54323) to inspect the local database. Sto
 
 Choose a date, category, description, and amount in the quick-entry row. The category determines whether the entry is income, an expense, or an investment contribution. Press Enter or select the save button. The ledger supports editing, deletion, month navigation, search, type filters, and CSV export.
 
+Choose Selected month or All dates above the transaction table. All dates includes your entire history. The table shows 25 entries per page; search and type filters apply before pagination, and CSV export includes every matching entry. The dashboard totals and breakdown remain tied to the month selected at the top.
+
+The overview table switches between 1 month and YTD. YTD shows monthly rows from January through the selected month of that year.
+
 Use the paste control to preview tab-separated rows copied from a spreadsheet. Follow the column order displayed in the dialog. Saving the preview stores the rows together. Invalid rows and failed saves retain the draft.
 
 Open Account & settings to preview and add synthetic sample entries to your signed-in local account. New accounts otherwise start empty.
 
-Income, expenses, and contributions are separate totals. Cash remaining equals recorded income minus expenses minus contributions. These totals describe recorded flows. They do not represent account balances, portfolio values, or investment returns. Categories are presets. The MVP uses one currency and manual entry.
+Income, expenses, and contributions are separate totals. Cash remaining equals recorded income minus expenses minus contributions. These totals describe recorded flows. They do not represent account balances, portfolio values, or investment returns. The MVP uses one currency and manual entry.
+
+In Account & settings, add categories under the fixed Income, Expenses, or Investments types. Rename a category to update its label throughout your history. Remove hides it from new entry choices and imports while retaining linked entries. Enable Show removed categories to restore it. Category names are unique within your account, including removed categories. A category's type stays fixed after creation.
 
 ## Run checks
 
@@ -52,7 +58,9 @@ npm run verify:db
 
 The database check requires the running local Supabase stack. It creates disposable accounts, exercises real authentication and row-level policies, and removes its own fixtures. It refuses a remote Supabase URL.
 
-The browser uses only the public anon key. The database enforces ownership for reads, inserts, edits, and deletes. Entries use integer cents and calendar dates. Creates preserve IDs through retries. Concurrent edits use the last successful save.
+The browser uses only the public anon key. The database enforces ownership for reads, inserts, edits, and deletes. Categories are private to each account. New accounts start with independent default categories. Entries use integer cents and calendar dates. Creates preserve IDs through retries. Concurrent edits use the last successful save.
+
+The production build uses Next.js's supported webpack option. The local sandbox blocked a Turbopack CSS subprocess from binding its internal port.
 
 Password recovery, external email delivery, bank connections, automatic imports, shared accounts, and deployment are outside this local MVP. Local email confirmation is disabled in `supabase/config.toml`. Configure email delivery and confirmation before using a hosted environment.
 # FinanceTracker
