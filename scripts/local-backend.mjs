@@ -23,8 +23,10 @@ if (process.argv.includes("--stop")) {
   run(["migration", "up", "--local"]);
   const status = JSON.parse(run(["status", "-o", "json"]));
   const existing = existsSync(".env.local") ? readFileSync(".env.local", "utf8") : "";
-  const lines = existing.split(/\r?\n/).filter((line) => line && !/^NEXT_PUBLIC_SUPABASE_(URL|ANON_KEY)=/.test(line));
-  lines.push(`NEXT_PUBLIC_SUPABASE_URL=${status.API_URL}`, `NEXT_PUBLIC_SUPABASE_ANON_KEY=${status.ANON_KEY}`);
+  const lines = existing.split(/\r?\n/).filter((line) => line && !/^NEXT_PUBLIC_SUPABASE_(URL|ANON_KEY|PUBLISHABLE_KEY)=/.test(line));
+  const keyName = status.PUBLISHABLE_KEY ? "PUBLISHABLE_KEY" : "ANON_KEY";
+  const key = status.PUBLISHABLE_KEY || status.ANON_KEY;
+  lines.push(`NEXT_PUBLIC_SUPABASE_URL=${status.API_URL}`, `NEXT_PUBLIC_SUPABASE_${keyName}=${key}`);
   writeFileSync(".env.local", `${lines.join("\n")}\n`, { mode: 0o600 });
   console.log("Local Supabase is ready. Public app settings saved to .env.local.");
   console.log(`Database Studio is available at ${status.STUDIO_URL}.`);

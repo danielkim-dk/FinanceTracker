@@ -149,19 +149,18 @@ function AuthGate({ client }: { client: SupabaseClient | null }) {
     return (
       <div className="setup-page">
         <Logo />
-        <h1>
-          A little setup,
-          <br />
-          then a little clarity.
-        </h1>
+        <h1>Connect your Supabase project</h1>
         <p>
-          Start the local Supabase backend and add its public connection details
-          to <code>.env.local</code>. Penny will be ready when you restart the
-          app.
+          Penny is missing its Supabase URL or public key. Set{" "}
+          <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+          <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> using your project’s
+          connection details.
         </p>
         <p className="muted">
-          Run <code>npm run setup:local</code> from this project. Your ledger is
-          stored in the local database.
+          On Vercel, add them in your project’s Environment Variables and
+          redeploy. When running locally, add them to <code>.env.local</code> and
+          restart the app. A legacy <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> is
+          also supported.
         </p>
       </div>
     );
@@ -326,7 +325,7 @@ function AuthForm({ client }: { client: SupabaseClient }) {
           </div>
           <div className="privacy-note">
             <ShieldCheck size={18} />
-            <span>Your private ledger is saved in your local database.</span>
+            <span>Your private ledger is saved in your database.</span>
           </div>
         </div>
       </section>
@@ -599,7 +598,7 @@ function Workspace({
           </span>
           <span className="local-badge">
             <span />
-            Local workspace · USD
+            Your workspace · USD
           </span>
         </header>
         <div className="page-content">
@@ -1088,7 +1087,7 @@ function Workspace({
                   </nav>
                   <span className="ledger-storage-note">
                     <ShieldCheck size={14} />
-                    Saved to your local database
+                    Saved to your database
                   </span>
                 </div>
               </div>
@@ -1224,7 +1223,7 @@ function Workspace({
             <ShieldCheck size={19} />
             <p>
               Only your account can read or change your entries. This workspace
-              uses your local Supabase database.
+              uses your Supabase database.
             </p>
           </div>
           <CategorySettings
