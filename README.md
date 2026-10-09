@@ -15,10 +15,11 @@ The legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` variable is also accepted. If both ke
 
 For Vercel, add these two variables to the Production environment, and Preview if needed, before deploying. Redeploy after changing them because Next.js embeds public variables at build time. The deployed app connects directly to the Supabase project configured by that URL.
 
-Apply both migrations to that project in order before using the app:
+Apply the migrations to that project in order before using the app:
 
 1. `supabase/migrations/20261006183000_create_ledger.sql`
 2. `supabase/migrations/20261006185000_owned_categories.sql`
+3. `supabase/migrations/20261009120000_expense_refunds.sql`
 
 These create the tables, per-account categories, and row-level security policies. Environment variables alone do not install the database schema. In Supabase Auth URL Configuration, set Site URL to your deployed app URL and add it to Redirect URLs, along with the local URL or preview URLs you intend to use. Signup requests a confirmation redirect to the app origin where signup started. For this project's local server, allow `http://127.0.0.1:3100`. Configure hosted email confirmation and delivery for your project. Local accounts and entries remain in the local database; connecting a hosted project does not copy them.
 
@@ -55,6 +56,8 @@ Use [Supabase Studio](http://127.0.0.1:54323) to inspect the local database. Sto
 ## Record transactions
 
 Choose a date, category, description, and amount in the quick-entry row. The category determines whether the entry is income, an expense, or an investment contribution. Press Enter or select the save button. The ledger supports editing, deletion, month navigation, search, type filters, and CSV export.
+
+Use a negative expense amount for a refund, such as `-12.30`. Refunds remain expense entries and reduce expense totals in the month recorded. Income and investment amounts must be positive. Zero amounts are invalid. Amounts accept up to two decimal places and a maximum absolute value of $999,999,999.99. Apply the refund migration before using the updated app.
 
 Choose Selected month or All dates above the transaction table. All dates includes your entire history. The table shows 25 entries per page; search and type filters apply before pagination, and CSV export includes every matching entry. The dashboard totals and breakdown remain tied to the month selected at the top.
 

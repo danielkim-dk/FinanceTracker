@@ -13,8 +13,10 @@ import {
   parseTSV,
   shiftMonth,
   summarize,
+  validateAmountCents,
   type Category,
   type Entry,
+  type EntryKind,
 } from "./finance";
 
 const categories: Category[] = [
@@ -52,21 +54,37 @@ const entry = (
 ): Entry => ({ id, date, amountCents, description, category });
 
 test("USD input preserves decimal cents exactly and rejects rounding or coercion", () => {
-  assert.equal(parseMoney(" 10.29 "), 1029);
-  assert.equal(parseMoney("0.01"), 1);
-  assert.equal(parseMoney("999999999.99"), 99_999_999_999);
+  for (const kind of ["income", "expense", "investment"] as EntryKind[]) {
+    assert.equal(parseMoney(" 10.29 ", kind), 1029);
+    assert.equal(parseMoney("0.01", kind), 1);
+    assert.equal(parseMoney("999999999.99", kind), 99_999_999_999);
+  }
+  assert.equal(parseMoney(" -12.30 ", "expense"), -1230);
+  assert.equal(parseMoney("-0.01", "expense"), -1);
+  assert.equal(parseMoney("-999999999.99", "expense"), -99_999_999_999);
+  for (const kind of ["income", "investment"] as const)
+    assert.throws(() => parseMoney("-0.01", kind), /must be positive/);
   for (const value of [
     "0",
-    "-1",
+    "0.00",
+    "-0",
+    "-0.00",
     "12.345",
+    "-12.345",
     "1e2",
     "1,000.00",
     "Infinity",
     "1000000000",
+    "-1000000000",
     "",
     ".5",
+    "-.5",
+    "+12.30",
+    "--12.30",
   ])
-    assert.throws(() => parseMoney(value));
+    assert.throws(() => parseMoney(value, "expense"));
+  for (const value of [NaN, Infinity, 0, -0, 1.5, 100_000_000_000, -100_000_000_000])
+    assert.throws(() => validateAmountCents(value, "expense"));
 });
 
 test("calendar dates reject rollover and respect leap years and bounds", () => {
@@ -134,15 +152,28 @@ test("manual entries infer type from a real category and trim description", () =
       ),
     /240 characters/,
   );
+  const refundDraft = {
+    id, date: "2026-10-06", amount: "-12.30",
+    categoryId: categories[1].id, description: " Refund ",
+  };
+  assert.deepEqual(parseDraft(refundDraft, categories), {
+    id, date: "2026-10-06", amountCents: -1230,
+    categoryId: categories[1].id, description: "Refund",
+  });
+  for (const category of [categories[0], categories[2]])
+    assert.throws(
+      () => parseDraft({ ...refundDraft, categoryId: category.id }, categories),
+      /must be positive/,
+    );
 });
 
 test("TSV stages valid rows and names invalid spreadsheet rows without partial saving", () => {
   const rows = parseTSV(
-    "Date\tCategory\tAmount\tDescription\r\n2026-10-06\tgroceries\t12.30\t Shop \r\n2026-02-30\tSalary\t25\tInvalid date\r\n2026-10-06\tMystery\t4\t\r\n2026-10-06\tBrokerage\t8.555\t\r\n",
+    "Date\tCategory\tAmount\tDescription\r\n2026-10-06\tgroceries\t12.30\t Shop \r\n2026-02-30\tSalary\t25\tInvalid date\r\n2026-10-06\tMystery\t4\t\r\n2026-10-06\tBrokerage\t8.555\t\r\n2026-10-06\tGroceries\t-12.30\tRefund\r\n2026-10-06\tSalary\t-1\r\n2026-10-06\tBrokerage\t-1\r\n",
     categories,
     () => id,
   );
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 7);
   assert.deepEqual(rows[0], {
     line: 2,
     entry: {
@@ -156,6 +187,9 @@ test("TSV stages valid rows and names invalid spreadsheet rows without partial s
   assert.match(rows[1].error ?? "", /real calendar date/);
   assert.match(rows[2].error ?? "", /Unknown category/);
   assert.match(rows[3].error ?? "", /two decimal places/);
+  assert.equal(rows[4].entry?.amountCents, -1230);
+  assert.match(rows[5].error ?? "", /must be positive/);
+  assert.match(rows[6].error ?? "", /must be positive/);
 });
 
 test("removed categories reject new entries and imports while existing edits can retain them", () => {
@@ -170,6 +204,12 @@ test("removed categories reject new entries and imports while existing edits can
   };
   assert.throws(() => parseDraft(draft, available), /removed/);
   assert.equal(parseDraft(draft, available, removed.id).categoryId, removed.id);
+  assert.equal(parseDraft({ ...draft, amount: "-12.30" }, available, removed.id).amountCents, -1230);
+  const removedIncome = { ...categories[0], archived: true };
+  assert.throws(
+    () => parseDraft({ ...draft, amount: "-1", categoryId: removedIncome.id }, [removedIncome], removedIncome.id),
+    /must be positive/,
+  );
   assert.throws(
     () => parseDraft(draft, available, categories[0].id),
     /removed/,
@@ -274,6 +314,34 @@ test("monthly summaries support one month and calendar YTD, exclusions, and nega
   );
 });
 
+test("refunds reduce expenses in their recorded month and preserve zero and negative category nets", () => {
+  const shopping = { ...categories[1], id: "00000000-0000-4000-8000-000000000004", label: "Shopping" };
+  const refund = entry(categories[1], -1230, "2026-10-06", "Refund");
+  const entries = [
+    entry(categories[1], 1230, "2026-09-30"),
+    refund,
+    entry(shopping, 2000),
+    entry(shopping, -2000),
+  ];
+  assert.deepEqual(summarize([refund]), {
+    income: 0, expense: -1230, investment: 0, remaining: 1230,
+  });
+  const rows = monthlySummary(entries, "2026-10");
+  assert.equal(rows[8].expense, 1230);
+  assert.deepEqual(rows[9], {
+    month: "2026-10", income: 0, expense: -1230, investment: 0,
+    remaining: 1230, expenseExcludingHousingUtilities: -1230,
+  });
+  assert.equal(summarize(entries).expense, 0);
+  assert.deepEqual(
+    categoryBreakdown(entries.filter((entry) => entry.date.startsWith("2026-10")), "expense"),
+    [
+      { id: shopping.id, name: "Shopping", color: shopping.color, value: 0 },
+      { id: categories[1].id, name: "Groceries", color: categories[1].color, value: -1230 },
+    ],
+  );
+});
+
 test("transaction filters include all history and compose month/type/search while preserving date and input order", () => {
   const history = entry({ ...categories[1], archived: true }, 1230, "2024-09-01", "Historic market");
   const salary = entry(categories[0], 620000, "2026-10-01", "Salary");
@@ -308,11 +376,15 @@ test("transaction pages show 25 rows, clamp after removals, and leave full resul
   assert.equal(filtered.length, 51);
 });
 
-test("CSV escapes quotes and spreadsheet formulas while keeping exact positive amounts", () => {
+test("CSV escapes quotes and spreadsheet formulas while keeping signed amounts numeric", () => {
   assert.equal(
     entriesCSV([
       entry(categories[1], 1230, "2026-10-06", '=HYPERLINK("unsafe")'),
     ]),
     'Date,Type,Category,Amount (USD),Description\r\n"2026-10-06","expense","Groceries","12.30","\'=HYPERLINK(""unsafe"")"',
+  );
+  assert.equal(
+    entriesCSV([entry({ ...categories[1], label: "-Special" }, -1230, "2026-10-06", "-Refund")]),
+    'Date,Type,Category,Amount (USD),Description\r\n"2026-10-06","expense","\'-Special","-12.30","\'-Refund"',
   );
 });

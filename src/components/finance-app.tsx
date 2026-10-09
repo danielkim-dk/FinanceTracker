@@ -408,6 +408,9 @@ function Workspace({
   const paginated = paginateEntries(filtered, page);
   const breakdown = categoryBreakdown(current, breakdownKind);
   const breakdownTotal = breakdown.reduce((sum, item) => sum + item.value, 0);
+  const showBreakdownChart =
+    breakdownTotal > 0 && breakdown.every((item) => item.value >= 0);
+  const breakdownSlices = breakdown.filter((item) => item.value > 0);
   const loading = categoriesQuery.isPending || entriesQuery.isPending;
   const failure = categoriesQuery.error ?? entriesQuery.error;
   const mutation = useMutation({
@@ -801,26 +804,34 @@ function Workspace({
                       <>
                         <div className="donut-wrap">
                           <div className="donut-center">
-                            <span>{kindLabels[breakdownKind]}</span>
-                            <strong>{money(breakdownTotal, false)}</strong>
+                            <span>
+                              {showBreakdownChart
+                                ? kindLabels[breakdownKind]
+                                : `Net ${kindLabels[breakdownKind].toLowerCase()}`}
+                            </span>
+                            <strong>
+                              {money(breakdownTotal, !showBreakdownChart)}
+                            </strong>
                           </div>
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={breakdown}
-                                dataKey="value"
-                                nameKey="name"
-                                innerRadius={65}
-                                outerRadius={83}
-                                paddingAngle={3}
-                                stroke="none"
-                              >
-                                {breakdown.map((item) => (
-                                  <Cell key={item.id} fill={item.color} />
-                                ))}
-                              </Pie>
-                            </PieChart>
-                          </ResponsiveContainer>
+                          {showBreakdownChart && (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={breakdownSlices}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  innerRadius={65}
+                                  outerRadius={83}
+                                  paddingAngle={3}
+                                  stroke="none"
+                                >
+                                  {breakdownSlices.map((item) => (
+                                    <Cell key={item.id} fill={item.color} />
+                                  ))}
+                                </Pie>
+                              </PieChart>
+                            </ResponsiveContainer>
+                          )}
                         </div>
                         <div className="category-legend">
                           {breakdown.map((item) => (
@@ -830,12 +841,23 @@ function Workspace({
                                 {item.name}
                               </span>
                               <strong>
-                                {Math.round((item.value / breakdownTotal) * 100)}%
-                                <small>{money(item.value)}</small>
+                                {showBreakdownChart ? (
+                                  <>
+                                    {Math.round((item.value / breakdownTotal) * 100)}%
+                                    <small>{money(item.value)}</small>
+                                  </>
+                                ) : (
+                                  money(item.value)
+                                )}
                               </strong>
                             </div>
                           ))}
                         </div>
+                        {!showBreakdownChart && (
+                          <p className="draft-date-note">
+                            Net amounts include refunds.
+                          </p>
+                        )}
                       </>
                     ) : (
                       <div className="chart-empty">
@@ -962,78 +984,88 @@ function Workspace({
                       </tr>
                     </thead>
                     <tbody>
-                      {paginated.entries.map((entry) => (
-                        <tr key={entry.id}>
-                          <td className="date-cell">
-                            {new Intl.DateTimeFormat("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              ...(dateScope === "all" ? { year: "numeric" as const } : {}),
-                              timeZone: "UTC",
-                            }).format(new Date(`${entry.date}T12:00:00Z`))}
-                          </td>
-                          <td className="description-cell">
-                            <span
-                              className={`transaction-icon ${entry.category.kind}`}
+                      {paginated.entries.map((entry) => {
+                        const cashflow =
+                          entry.category.kind === "income"
+                            ? entry.amountCents
+                            : -entry.amountCents;
+                        const refund =
+                          entry.category.kind === "expense" && entry.amountCents < 0;
+                        return (
+                          <tr key={entry.id}>
+                            <td className="date-cell">
+                              {new Intl.DateTimeFormat("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                ...(dateScope === "all" ? { year: "numeric" as const } : {}),
+                                timeZone: "UTC",
+                              }).format(new Date(`${entry.date}T12:00:00Z`))}
+                            </td>
+                            <td className="description-cell">
+                              <span
+                                className={`transaction-icon ${cashflow > 0 ? "income" : entry.category.kind}`}
+                              >
+                                {cashflow > 0 ? (
+                                  <ArrowDownLeft size={15} />
+                                ) : entry.category.kind === "investment" ? (
+                                  <TrendingUp size={15} />
+                                ) : (
+                                  <ArrowUpRight size={15} />
+                                )}
+                              </span>
+                              <span>
+                                {entry.description || entry.category.label}
+                              </span>
+                            </td>
+                            <td>
+                              <span className="category-label">
+                                <i style={{ background: entry.category.color }} />
+                                {entry.category.label}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`type-badge ${entry.category.kind}`}>
+                                {entry.category.kind === "expense"
+                                  ? refund
+                                    ? "Expense refund"
+                                    : "Expense"
+                                  : entry.category.kind === "investment"
+                                    ? "Investment"
+                                    : "Income"}
+                              </span>
+                            </td>
+                            <td
+                              className={`amount-cell ${cashflow > 0 ? "positive" : ""}`}
                             >
-                              {entry.category.kind === "income" ? (
-                                <ArrowDownLeft size={15} />
-                              ) : entry.category.kind === "investment" ? (
-                                <TrendingUp size={15} />
-                              ) : (
-                                <ArrowUpRight size={15} />
-                              )}
-                            </span>
-                            <span>
-                              {entry.description || entry.category.label}
-                            </span>
-                          </td>
-                          <td>
-                            <span className="category-label">
-                              <i style={{ background: entry.category.color }} />
-                              {entry.category.label}
-                            </span>
-                          </td>
-                          <td>
-                            <span className={`type-badge ${entry.category.kind}`}>
-                              {entry.category.kind === "expense"
-                                ? "Expense"
-                                : entry.category.kind === "investment"
-                                  ? "Investment"
-                                  : "Income"}
-                            </span>
-                          </td>
-                          <td
-                            className={`amount-cell ${entry.category.kind === "income" ? "positive" : ""}`}
-                          >
-                            {entry.category.kind === "income" ? "+" : "−"}
-                            {money(entry.amountCents)}
-                          </td>
-                          <td>
-                            <div className="row-actions">
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Edit ${entry.description || entry.category.label}`}
-                                onClick={() => setEditing(entry)}
-                              >
-                                <Pencil size={14} />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Delete ${entry.description || entry.category.label}`}
-                                onClick={() => {
-                                  mutation.reset();
-                                  setDeleting(entry);
-                                }}
-                              >
-                                <Trash2 size={14} />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                              {cashflow > 0 ? "+" : "−"}
+                              {money(Math.abs(cashflow))}
+                            </td>
+                            <td>
+                              <div className="row-actions">
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={`Edit ${entry.description || entry.category.label}`}
+                                  onClick={() => setEditing(entry)}
+                                >
+                                  <Pencil size={14} />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label={`Delete ${entry.description || entry.category.label}`}
+                                  onClick={() => {
+                                    mutation.reset();
+                                    setDeleting(entry);
+                                  }}
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                   {!filtered.length && (
@@ -1738,6 +1770,10 @@ function QuickEntry({
           {pending ? <LoaderCircle className="spin" /> : <Plus />}
         </Button>
       </form>
+      <p className="draft-date-note">
+        Use a negative expense amount for a refund. Income and investments
+        must be positive.
+      </p>
       {(!activeCategories.length || unavailableCategory) && (
         <p className="draft-date-note">
           {!activeCategories.length
@@ -1800,6 +1836,8 @@ function EditEntry({
         <DialogTitle>Edit entry</DialogTitle>
         <DialogDescription>
           Keep the details up to date. The most recent save takes effect.
+          {" "}Use a negative expense amount for a refund. Income and investments
+          must be positive.
         </DialogDescription>
       </DialogHeader>
       <form onSubmit={submit} className="edit-form">
@@ -1924,8 +1962,12 @@ function ImportEntries({
       <div className="import-format">
         <strong>Date → Category → Amount → Description</strong>
         <span>
-          Tab-separated · YYYY-MM-DD · positive USD amounts · optional
+          Tab-separated · YYYY-MM-DD · USD amounts · optional
           description
+        </span>
+        <span>
+          Use a negative expense amount for a refund. Income and investments
+          must be positive.
         </span>
         <code>
           2026-10-06{String.fromCharCode(9)}Groceries{String.fromCharCode(9)}

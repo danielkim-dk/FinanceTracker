@@ -4,6 +4,7 @@ import {
   kindSchema,
   parseDate,
   parseCategoryLabel,
+  validateAmountCents,
   type Category,
   type Entry,
   type EntryInput,
@@ -33,7 +34,7 @@ const categoryRow = z.object({
 const entryRow = z.object({
   id: z.uuid(),
   occurred_on: z.string().transform(parseDate),
-  amount_cents: z.number().int().positive().max(99_999_999_999),
+  amount_cents: z.number(),
   description: z.string().max(240),
   category: categoryRow,
 });
@@ -54,7 +55,7 @@ function decodeEntry(raw: unknown): Entry {
   return {
     id: row.id,
     date: row.occurred_on,
-    amountCents: row.amount_cents,
+    amountCents: validateAmountCents(row.amount_cents, row.category.kind),
     description: row.description,
     category: decodeCategory(row.category),
   };

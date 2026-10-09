@@ -37,19 +37,31 @@ export const kindLabels: Record<EntryKind, string> = {
   investment: "Investments",
 };
 
-export function parseMoney(raw: string): number {
-  const value = raw.trim();
-  if (!/^\d+(\.\d{1,2})?$/.test(value)) {
+export function validateAmountCents(cents: number, kind: EntryKind): number {
+  if (
+    !Number.isSafeInteger(cents) ||
+    cents === 0 ||
+    Math.abs(cents) > 99_999_999_999
+  ) {
     throw new Error(
-      "Enter a positive USD amount with up to two decimal places.",
+      "Amount must be nonzero and at most $999,999,999.99 in either direction.",
     );
   }
-  const [dollars, decimals = ""] = value.split(".");
-  const cents = Number(dollars) * 100 + Number(decimals.padEnd(2, "0"));
-  if (!Number.isSafeInteger(cents) || cents <= 0 || cents > 99_999_999_999) {
-    throw new Error("Amount must be between $0.01 and $999,999,999.99.");
+  if (cents < 0 && kind !== "expense") {
+    throw new Error("Income and investment amounts must be positive.");
   }
   return cents;
+}
+
+export function parseMoney(raw: string, kind: EntryKind): number {
+  const value = raw.trim();
+  if (!/^-?\d+(\.\d{1,2})?$/.test(value)) {
+    throw new Error("Enter a USD amount with up to two decimal places.");
+  }
+  const negative = value.startsWith("-");
+  const [dollars, decimals = ""] = (negative ? value.slice(1) : value).split(".");
+  const cents = Number(dollars) * 100 + Number(decimals.padEnd(2, "0"));
+  return validateAmountCents(negative ? -cents : cents, kind);
 }
 
 export function parseDate(raw: string): string {
@@ -89,7 +101,7 @@ export function parseDraft(
   return {
     id: z.uuid().parse(draft.id),
     date: parseDate(draft.date),
-    amountCents: parseMoney(draft.amount),
+    amountCents: parseMoney(draft.amount, category.kind),
     description,
     categoryId: draft.categoryId,
   };
@@ -274,13 +286,12 @@ export function entriesCSV(entries: Entry[]): string {
   };
   const rows = entries.map((entry) =>
     [
-      entry.date,
-      entry.category.kind,
-      entry.category.label,
-      (entry.amountCents / 100).toFixed(2),
-      entry.description,
+      quote(entry.date),
+      quote(entry.category.kind),
+      quote(entry.category.label),
+      `"${(entry.amountCents / 100).toFixed(2)}"`,
+      quote(entry.description),
     ]
-      .map(quote)
       .join(","),
   );
   return ["Date,Type,Category,Amount (USD),Description", ...rows].join("\r\n");

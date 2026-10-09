@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import { createCategory, fetchCategories, fetchEntries, insertEntries, renameCategory, setCategoryArchived } from "../src/lib/finance-api.ts";
+import { createCategory, fetchCategories, fetchEntries, insertEntries, renameCategory, setCategoryArchived, updateEntry } from "../src/lib/finance-api.ts";
 
 const status = JSON.parse(execFileSync(resolve("node_modules/.bin/supabase"), ["status", "-o", "json"], { encoding: "utf8" }));
 assert.equal(new URL(status.API_URL).hostname, "127.0.0.1", "Only the disposable local stack may be tested.");
@@ -96,14 +96,63 @@ try {
   assert.ok((await a.client.from("entries").insert({ ...row, id: randomUUID(), category_id: custom.data.id })).error, "Removed categories cannot be assigned to new entries.");
   assert.ok((await a.client.from("entries").update({ category_id: custom.data.id }).eq("id", row.id)).error, "Removed categories cannot be newly assigned during an edit.");
   assert.equal((await a.client.from("entries").update({ amount_cents: 25 }).eq("id", historyId)).error, null, "An existing removed category can remain while other fields are edited.");
+  assert.equal((await a.client.from("entries").update({ amount_cents: -25 }).eq("id", historyId)).error, null, "An existing removed expense category can retain a refund during an edit.");
   const history = await a.client.from("entries").select("amount_cents,category:categories(label,archived)").eq("id", historyId).single();
-  assert.equal(history.data.amount_cents, 25);
+  assert.equal(history.data.amount_cents, -25);
   assert.deepEqual(history.data.category, { label: "Travel", archived: true }, "Removing a category preserves linked history.");
   assert.ok((await a.client.from("categories").delete().eq("id", custom.data.id)).error, "Category removal cannot hard-delete history.");
   const allCategories = await fetchCategories(a.client, a.id, new AbortController().signal);
   assert.equal(allCategories.find((category) => category.id === custom.data.id).archived, true, "Category gateway retains removed definitions for history and settings.");
   await setCategoryArchived(a.client, a.id, custom.data.id, false);
   assert.equal((await a.client.from("entries").delete().eq("id", historyId)).error, null);
+
+  await setCategoryArchived(a.client, a.id, salary.id, true);
+  assert.equal((await a.client.from("entries").update({ amount_cents: 10026 }).eq("id", row.id)).error, null, "An existing removed income category can retain a positive amount during an edit.");
+  assert.ok((await a.client.from("entries").update({ amount_cents: -1 }).eq("id", row.id)).error, "Retaining a removed income category cannot bypass its positive amount rule.");
+  assert.equal((await a.client.from("entries").select("amount_cents").eq("id", row.id).single()).data.amount_cents, 10026, "A rejected removed-category edit preserves the saved amount.");
+  assert.equal((await a.client.from("entries").update({ amount_cents: row.amount_cents }).eq("id", row.id)).error, null);
+  await setCategoryArchived(a.client, a.id, salary.id, false);
+
+  const groceries = categories.find((category) => category.label === "Groceries");
+  const brokerage = categories.find((category) => category.label === "Brokerage");
+  const refund = {
+    id: randomUUID(), date: "2026-10-06", categoryId: groceries.id,
+    amountCents: -1230, description: "Refund fixture",
+  };
+  await insertEntries(a.client, a.id, [refund]);
+  await insertEntries(a.client, a.id, [refund]);
+  await assert.rejects(insertEntries(a.client, a.id, [{ ...refund, amountCents: -1231 }]), /different details/);
+  const refundRead = (await fetchEntries(a.client, a.id, null, null, new AbortController().signal)).find((entry) => entry.id === refund.id);
+  assert.equal(refundRead.amountCents, -1230, "The gateway reads signed expense cents after an idempotent retry.");
+  assert.equal(refundRead.category.kind, "expense", "Refunds retain their expense category type.");
+  await updateEntry(a.client, a.id, { ...refund, amountCents: -456 });
+  assert.equal((await fetchEntries(a.client, a.id, null, null, new AbortController().signal)).find((entry) => entry.id === refund.id).amountCents, -456, "Refund edits persist and decode through the public gateway.");
+
+  const investmentId = randomUUID();
+  assert.equal((await a.client.from("entries").insert({ ...row, id: investmentId, category_id: brokerage.id })).error, null);
+  for (const [category, existingId] of [[salary, row.id], [brokerage, investmentId]]) {
+    assert.ok((await a.client.from("entries").insert({ ...row, id: randomUUID(), category_id: category.id, amount_cents: -1 })).error, `Negative ${category.kind} inserts are rejected.`);
+    assert.ok((await a.client.from("entries").update({ amount_cents: -1 }).eq("id", existingId)).error, `Negative ${category.kind} edits are rejected.`);
+    assert.ok((await a.client.from("entries").update({ category_id: category.id }).eq("id", refund.id)).error, `A refund cannot be reassigned to ${category.kind}.`);
+  }
+  const boundsRows = [99_999_999_999, -99_999_999_999].map((amount_cents) => ({
+    ...row, id: randomUUID(), category_id: groceries.id, amount_cents,
+  }));
+  assert.equal((await a.client.from("entries").insert(boundsRows)).error, null, "Both absolute amount boundaries are valid expenses.");
+  assert.deepEqual(
+    (await fetchEntries(a.client, a.id, null, null, new AbortController().signal))
+      .filter((entry) => boundsRows.some((row) => row.id === entry.id))
+      .map((entry) => entry.amountCents).sort((a, b) => a - b),
+    [-99_999_999_999, 99_999_999_999],
+    "Both amount boundaries survive database readback.",
+  );
+  for (const amount_cents of [0, 100_000_000_000, -100_000_000_000]) {
+    assert.ok((await a.client.from("entries").insert({ ...row, id: randomUUID(), category_id: groceries.id, amount_cents })).error, "Zero and out-of-bounds expense inserts are rejected.");
+    assert.ok((await a.client.from("entries").update({ amount_cents }).eq("id", refund.id)).error, "Zero and out-of-bounds expense edits are rejected.");
+  }
+  assert.equal((await a.client.from("entries").select("amount_cents,category_id").eq("id", refund.id).single()).data.amount_cents, -456, "Rejected edits do not alter the refund amount.");
+  assert.equal((await a.client.from("entries").select("category_id").eq("id", refund.id).single()).data.category_id, groceries.id, "Rejected reassignments do not alter the refund category.");
+  assert.equal((await a.client.from("entries").delete().in("id", [refund.id, investmentId, ...boundsRows.map((row) => row.id)])).error, null, "Refund fixtures are removed before pagination checks.");
 
   const duplicate = await a.client.from("entries").insert(row);
   assert.equal(duplicate.error.code, "23505", "Retry cannot duplicate an entry or overwrite it.");
@@ -113,12 +162,12 @@ try {
   assert.equal((await a.client.from("entries").select("amount_cents").eq("id", row.id).single()).data.amount_cents, 10025, "A changed retry cannot overwrite the saved entry.");
   const goodId = randomUUID();
   const badBatch = await a.client.from("entries").insert([
-    { ...row, id: goodId },
+    { ...row, id: goodId, category_id: groceries.id, amount_cents: -1230 },
     { ...row, id: randomUUID(), amount_cents: -1 },
   ]);
   assert.ok(badBatch.error, "Invalid amounts fail at the database boundary.");
   const afterRollback = await a.client.from("entries").select("*").eq("id", goodId);
-  assert.deepEqual(afterRollback.data, [], "A malformed batch rolls back the entire insert.");
+  assert.deepEqual(afterRollback.data, [], "A malformed batch rolls back its valid refund too.");
 
   const many = Array.from({ length: 1005 }, () => ({ ...row, id: randomUUID(), amount_cents: 1, description: "Pagination fixture" }));
   assert.equal((await a.client.from("entries").insert(many)).error, null);
@@ -154,7 +203,7 @@ try {
   assert.deepEqual((await a.client.from("entries").select("*").eq("id", row.id)).data, []);
   await a.client.auth.signOut();
   assert.ok((await a.client.from("entries").select("*")).error, "Signout removes authenticated access.");
-  console.log("PASS. Local auth, ledger CRUD, category creation/rename/removal/restore, private defaults, fixed types, RLS/FK isolation, atomic batches, retry safety, descending date and input order, 1,007-row month pagination and 1,008-row private all-dates history.");
+  console.log("PASS. Local auth, ledger CRUD, refund insert/edit/readback/retry, signed bounds, non-expense sign enforcement, category creation/rename/removal/restore, private defaults, fixed types, RLS/FK isolation, atomic batches, retry safety, descending date and input order, 1,007-row month pagination and 1,008-row private all-dates history.");
 } finally {
   for (const id of users) {
     const { error } = await admin.auth.admin.deleteUser(id);
