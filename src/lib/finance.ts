@@ -2,6 +2,15 @@ import { z } from "zod";
 
 export const kindSchema = z.enum(["income", "expense", "investment"]);
 export type EntryKind = z.infer<typeof kindSchema>;
+export const monthSchema = z.string().regex(
+  /^(19\d{2}|20\d{2}|2100)-(0[1-9]|1[0-2])$/,
+  "Choose a month between January 1900 and December 2100.",
+);
+export const monthlyNoteSchema = z.object({
+  month: monthSchema,
+  text: z.string(),
+});
+export type MonthlyNote = z.infer<typeof monthlyNoteSchema>;
 export type Category = {
   id: string;
   label: string;

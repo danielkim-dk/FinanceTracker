@@ -59,8 +59,10 @@ import {
   deleteEntry,
   fetchCategories,
   fetchEntries,
+  fetchMonthlyNote,
   insertEntries,
   renameCategory,
+  saveMonthlyNote,
   setCategoryArchived,
   updateEntry,
 } from "@/lib/finance-api";
@@ -84,6 +86,7 @@ import {
   type EntryDraft,
   type EntryInput,
   type EntryKind,
+  type MonthlyNote,
   type PastedRow,
 } from "@/lib/finance";
 
@@ -368,6 +371,7 @@ function Workspace({
   const [deleting, setDeleting] = useState<Entry | null>(null);
   const [breakdownKind, setBreakdownKind] = useState<EntryKind>("expense");
   const [sample, setSample] = useState<EntryInput[] | null>(null);
+  const [noteDrafts, setNoteDrafts] = useState<Partial<Record<string, string>>>({});
   const quickEntry = useRef<HTMLDivElement>(null);
   const categoriesQuery = useQuery({
     queryKey: ["categories", uid],
@@ -391,6 +395,28 @@ function Workspace({
     enabled: dateScope === "all",
   });
   const categories = categoriesQuery.data ?? [];
+  const noteQuery = useQuery({
+    queryKey: ["monthly-note", uid, month],
+    queryFn: ({ signal }) => fetchMonthlyNote(client, uid, month, signal),
+    enabled: view === "overview",
+  });
+  const noteMutation = useMutation({
+    mutationFn: (note: MonthlyNote) => saveMonthlyNote(client, uid, note),
+    onSuccess: async (_result, note) => {
+      await queryClient.cancelQueries({ queryKey: ["monthly-note", uid, note.month], exact: true });
+      if (!active.current) return;
+      queryClient.setQueryData(["monthly-note", uid, note.month], note);
+      setNoteDrafts((drafts) => {
+        if (drafts[note.month] !== note.text) return drafts;
+        const next = { ...drafts };
+        delete next[note.month];
+        return next;
+      });
+    },
+  });
+  const noteText = noteDrafts[month] ?? noteQuery.data?.text ?? "";
+  const noteChanged = noteText !== (noteQuery.data?.text ?? "");
+  const currentNoteMutation = noteMutation.variables?.month === month;
   const activeCategories = categories.filter((category) => !category.archived);
   const entries = entriesQuery.data ?? [];
   const current = entries.filter((entry) => entry.date.startsWith(month));
@@ -721,6 +747,7 @@ function Workspace({
               </section>
               {view === "overview" && (
                 <section className="charts-grid">
+                  <div className="overview-left-column">
                   <Card className="chart-panel cashflow-panel">
                     <Tabs defaultValue="ytd" className="monthly-summary-tabs">
                       <TabsList aria-label="Table period" className="monthly-period-tabs">
@@ -783,6 +810,62 @@ function Workspace({
                       Net = income − expense − investment.
                     </p>
                   </Card>
+                  <Card className="chart-panel monthly-notes-panel">
+                    <div className="monthly-notes-heading">
+                      <h2 id="monthly-notes-heading">Monthly notes</h2>
+                      <span>{monthLabel(month)}</span>
+                    </div>
+                    <p className="monthly-notes-description">
+                      Keep your plans and reminders for this month.
+                    </p>
+                    {noteQuery.isPending && (
+                      <p className="monthly-notes-status" role="status">Loading notes…</p>
+                    )}
+                    {noteQuery.error && (
+                      <div className="monthly-notes-error" role="alert">
+                        <p>We couldn&apos;t load your notes. {errorMessage(noteQuery.error)}</p>
+                        <Button variant="outline" disabled={noteQuery.isFetching} onClick={() => void noteQuery.refetch()}>
+                          Try again
+                        </Button>
+                      </div>
+                    )}
+                    <form onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!noteQuery.isPending && !noteQuery.error && noteChanged && !noteMutation.isPending)
+                        noteMutation.mutate({ month, text: noteText });
+                    }}>
+                      <Textarea
+                        aria-label={`Notes for ${monthLabel(month)}`}
+                        placeholder="Add a note for this month…"
+                        value={noteText}
+                        disabled={noteQuery.isPending || !!noteQuery.error || (currentNoteMutation && noteMutation.isPending)}
+                        onChange={(event) => {
+                          const text = event.target.value;
+                          setNoteDrafts((drafts) => ({ ...drafts, [month]: text }));
+                        }}
+                      />
+                      {currentNoteMutation && noteMutation.error && (
+                        <p className="monthly-notes-error" role="alert">
+                          We couldn&apos;t save your notes. {errorMessage(noteMutation.error)}
+                        </p>
+                      )}
+                      <div className="monthly-notes-footer">
+                        <p className="monthly-notes-status" role="status">
+                          {currentNoteMutation && noteMutation.isPending
+                            ? "Saving notes…"
+                            : noteChanged
+                              ? "Unsaved changes"
+                              : currentNoteMutation && noteMutation.isSuccess
+                                ? "Notes saved"
+                                : ""}
+                        </p>
+                        <Button type="submit" className="primary-button" disabled={noteQuery.isPending || !!noteQuery.error || !noteChanged || noteMutation.isPending}>
+                          Save notes
+                        </Button>
+                      </div>
+                    </form>
+                  </Card>
+                  </div>
                   <Card className="chart-panel category-panel" aria-label="Category breakdown">
                     <div className="breakdown-controls">
                       <select

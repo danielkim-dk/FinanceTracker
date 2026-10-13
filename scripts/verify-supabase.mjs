@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import { createCategory, fetchCategories, fetchEntries, insertEntries, renameCategory, setCategoryArchived, updateEntry } from "../src/lib/finance-api.ts";
+import { createCategory, fetchCategories, fetchEntries, fetchMonthlyNote, insertEntries, renameCategory, saveMonthlyNote, setCategoryArchived, updateEntry } from "../src/lib/finance-api.ts";
 
 const status = JSON.parse(execFileSync(resolve("node_modules/.bin/supabase"), ["status", "-o", "json"], { encoding: "utf8" }));
 assert.equal(new URL(status.API_URL).hostname, "127.0.0.1", "Only the disposable local stack may be tested.");
@@ -27,6 +27,41 @@ async function account() {
 try {
   const a = await account();
   const b = await account();
+  const readNote = (client, uid, month) => fetchMonthlyNote(client, uid, month, new AbortController().signal);
+  assert.deepEqual(await readNote(a.client, a.id, "2026-10"), { month: "2026-10", text: "" }, "A month without notes starts empty.");
+  const note = { month: "2026-10", text: "  October plans\nSave for travel.\n용돈 <b>plain text</b>  " };
+  await saveMonthlyNote(a.client, a.id, note);
+  await saveMonthlyNote(a.client, a.id, note);
+  assert.deepEqual(await readNote(a.client, a.id, "2026-10"), note, "Note save and retry preserve plain text, whitespace, and newlines.");
+  assert.equal((await a.client.from("monthly_notes").select("month")).data.length, 1, "Retries cannot duplicate monthly notes.");
+  const editedNote = { month: "2026-10", text: "Updated plans\n" + "Text without an arbitrary cap. ".repeat(100) };
+  await saveMonthlyNote(a.client, a.id, editedNote);
+  await saveMonthlyNote(a.client, a.id, { month: "2026-11", text: "November plans" });
+  await saveMonthlyNote(b.client, b.id, { month: "2026-10", text: "Private second account" });
+  assert.deepEqual(await readNote(a.client, a.id, "2026-10"), editedNote, "An edit persists without changing another month.");
+  assert.deepEqual(await readNote(a.client, a.id, "2026-11"), { month: "2026-11", text: "November plans" });
+  assert.deepEqual(await readNote(b.client, b.id, "2026-10"), { month: "2026-10", text: "Private second account" }, "The same month is independent per account.");
+  assert.deepEqual(await readNote(b.client, a.id, "2026-10"), { month: "2026-10", text: "" }, "Another account cannot read notes through the gateway.");
+  assert.deepEqual(await readNote(admin, b.id, "2026-10"), { month: "2026-10", text: "Private second account" }, "The gateway filters ownership even for a client that bypasses RLS.");
+  const foreignNotesUpdate = await b.client.from("monthly_notes").update({ text: "Hijacked" }).eq("user_id", a.id).eq("month", "2026-10-01").select();
+  assert.equal(foreignNotesUpdate.error, null);
+  assert.deepEqual(foreignNotesUpdate.data, [], "Another account cannot update notes.");
+  assert.ok((await b.client.from("monthly_notes").upsert({ user_id: a.id, month: "2026-12-01", text: "Forged owner" }, { onConflict: "user_id,month" })).error, "A forged note owner is rejected.");
+  assert.ok((await a.client.from("monthly_notes").update({ user_id: b.id }).eq("month", "2026-11-01")).error, "Notes cannot be reassigned to another account.");
+  assert.ok((await anonymous.from("monthly_notes").select("*")).error, "Anonymous note reads are rejected.");
+  assert.ok((await anonymous.from("monthly_notes").insert({ user_id: a.id, month: "2026-12-01", text: "Anonymous" })).error, "Anonymous note writes are rejected.");
+  assert.ok((await a.client.from("monthly_notes").delete().eq("month", "2026-10-01")).error, "Notes are cleared by saving empty text instead of deleting rows.");
+  for (const invalidMonth of ["2026-00", "2026-13", "2026-10-01", "1899-12", "2101-01"]) {
+    await assert.rejects(readNote(a.client, a.id, invalidMonth));
+    await assert.rejects(saveMonthlyNote(a.client, a.id, { month: invalidMonth, text: "Invalid" }));
+  }
+  for (const invalidMonth of ["2026-10-02", "1899-12-01", "2101-01-01"]) {
+    assert.ok((await a.client.from("monthly_notes").insert({ user_id: a.id, month: invalidMonth, text: "Invalid" })).error, "The database rejects non-month dates and out-of-range notes.");
+  }
+  await assert.rejects(saveMonthlyNote(b.client, a.id, note), /session changed/);
+  await saveMonthlyNote(a.client, a.id, { month: "2026-10", text: "" });
+  assert.deepEqual(await readNote(a.client, a.id, "2026-10"), { month: "2026-10", text: "" }, "Owners can clear saved notes.");
+  assert.deepEqual(await readNote(a.client, a.id, "2026-11"), { month: "2026-11", text: "November plans" }, "Clearing notes preserves other months.");
   const { data: categories, error: categoryError } = await a.client.from("categories").select("*").order("sort_order");
   assert.equal(categoryError, null);
   const salary = categories.find((category) => category.label === "Salary");
@@ -65,7 +100,7 @@ try {
     global: {
       fetch: async (input, init) => {
         const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
-        if (url.pathname === "/rest/v1/categories" && init?.method === "POST") {
+        if (["/rest/v1/categories", "/rest/v1/monthly_notes"].includes(url.pathname) && init?.method === "POST") {
           const headers = new Headers(init.headers);
           headers.set("Authorization", `Bearer ${bSession.access_token}`);
           return fetch(input, { ...init, headers });
@@ -77,6 +112,8 @@ try {
   await switchedRequest.auth.setSession({ access_token: aSession.access_token, refresh_token: aSession.refresh_token });
   const switchId = randomUUID();
   await assert.rejects(createCategory(switchedRequest, a.id, { id: switchId, label: "Switched account fixture", kind: "expense" }));
+  await assert.rejects(saveMonthlyNote(switchedRequest, a.id, { month: "2026-12", text: "Switched account fixture" }));
+  assert.deepEqual(await readNote(b.client, b.id, "2026-12"), { month: "2026-12", text: "" }, "A delayed save authenticated as another user cannot land in that user's account.");
   assert.deepEqual((await b.client.from("categories").select("id").eq("id", switchId)).data, [], "A delayed create authenticated as another user cannot land in that user's account.");
   assert.ok((await a.client.from("entries").insert({ ...row, id: randomUUID(), category_id: (await b.client.from("categories").select("id").eq("label", "Salary").single()).data.id })).error, "Cross-owner category assignment is rejected at the database boundary.");
 
@@ -203,7 +240,7 @@ try {
   assert.deepEqual((await a.client.from("entries").select("*").eq("id", row.id)).data, []);
   await a.client.auth.signOut();
   assert.ok((await a.client.from("entries").select("*")).error, "Signout removes authenticated access.");
-  console.log("PASS. Local auth, ledger CRUD, refund insert/edit/readback/retry, signed bounds, non-expense sign enforcement, category creation/rename/removal/restore, private defaults, fixed types, RLS/FK isolation, atomic batches, retry safety, descending date and input order, 1,007-row month pagination and 1,008-row private all-dates history.");
+  console.log("PASS. Local auth, monthly notes save/edit/readback/retry/clear, month and account isolation, note date bounds and session-switch rejection, ledger CRUD, refund insert/edit/readback/retry, signed bounds, non-expense sign enforcement, category creation/rename/removal/restore, private defaults, fixed types, RLS/FK isolation, atomic batches, retry safety, descending date and input order, 1,007-row month pagination and 1,008-row private all-dates history.");
 } finally {
   for (const id of users) {
     const { error } = await admin.auth.admin.deleteUser(id);

@@ -20,6 +20,7 @@ Apply the migrations to that project in order before using the app:
 1. `supabase/migrations/20261006183000_create_ledger.sql`
 2. `supabase/migrations/20261006185000_owned_categories.sql`
 3. `supabase/migrations/20261009120000_expense_refunds.sql`
+4. `supabase/migrations/20261013010000_monthly_notes.sql`
 
 These create the tables, per-account categories, and row-level security policies. Environment variables alone do not install the database schema. In Supabase Auth URL Configuration, set Site URL to your deployed app URL and add it to Redirect URLs, along with the local URL or preview URLs you intend to use. Signup requests a confirmation redirect to the app origin where signup started. For this project's local server, allow `http://127.0.0.1:3100`. Configure hosted email confirmation and delivery for your project. Local accounts and entries remain in the local database; connecting a hosted project does not copy them.
 
@@ -62,6 +63,8 @@ Use a negative expense amount for a refund, such as `-12.30`. Refunds remain exp
 Choose Selected month or All dates above the transaction table. All dates includes your entire history. The table shows 25 entries per page; search and type filters apply before pagination, and CSV export includes every matching entry. The dashboard totals and breakdown remain tied to the month selected at the top.
 
 The overview table switches between 1 month and YTD. YTD shows monthly rows from January through the selected month of that year.
+
+Use Monthly notes below the overview table to write notes for the selected month. Select Save notes to store your text. Each month has its own notes, private to your account. Unsaved drafts stay available when you switch months or views during the current session. Apply the monthly notes migration before using this card.
 
 Use the paste control to preview tab-separated rows copied from a spreadsheet. Follow the column order displayed in the dialog. Saving the preview stores the rows together. Invalid rows and failed saves retain the draft.
 

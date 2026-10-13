@@ -720,6 +720,66 @@ a {
   min-width: 0;
   min-height: 0;
 }
+.overview-left-column {
+  display: grid;
+  min-width: 0;
+  gap: 19px;
+}
+.chart-panel.monthly-notes-panel {
+  min-width: 0;
+  min-height: 0;
+}
+.monthly-notes-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.monthly-notes-heading h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.monthly-notes-heading > span {
+  color: #7c8c70;
+  font-size: 11px;
+}
+.monthly-notes-description {
+  margin-top: 5px;
+  color: #87917e;
+  font-size: 11px;
+}
+.monthly-notes-panel form {
+  margin-top: 16px;
+}
+.monthly-notes-panel textarea {
+  width: 100%;
+  min-height: 130px;
+  resize: vertical;
+  background: #f9faf6;
+  border-color: #e4e7db;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.monthly-notes-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.monthly-notes-status {
+  color: #7c8c70;
+  font-size: 11px;
+}
+.monthly-notes-error {
+  margin-top: 12px;
+  color: #a04436;
+  font-size: 12px;
+}
+.monthly-notes-error button {
+  margin-top: 8px;
+}
 .monthly-summary-tabs {
   gap: 0;
 }

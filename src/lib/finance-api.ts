@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
   kindSchema,
+  monthSchema,
+  monthlyNoteSchema,
   parseDate,
   parseCategoryLabel,
   validateAmountCents,
@@ -9,6 +11,7 @@ import {
   type Entry,
   type EntryInput,
   type EntryKind,
+  type MonthlyNote,
 } from "./finance";
 
 let browserClient: SupabaseClient | null = null;
@@ -200,6 +203,47 @@ async function assertUser(client: SupabaseClient, uid: string) {
   const { data, error } = await client.auth.getSession();
   if (error || data.session?.user.id !== uid)
     throw new Error("Your session changed. Sign in again before saving.");
+}
+
+export async function fetchMonthlyNote(
+  client: SupabaseClient,
+  uid: string,
+  month: string,
+  signal: AbortSignal,
+): Promise<MonthlyNote> {
+  const validMonth = monthSchema.parse(month);
+  const { data, error } = await client
+    .from("monthly_notes")
+    .select("month, text")
+    .eq("user_id", uid)
+    .eq("month", `${validMonth}-01`)
+    .abortSignal(signal)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return { month: validMonth, text: "" };
+  const row = z.object({
+    month: z.string().transform(parseDate),
+    text: z.string(),
+  }).parse(data);
+  if (row.month !== `${validMonth}-01`)
+    throw new Error(
+      "The saved notes do not match this month. Try loading them again.",
+    );
+  return { month: validMonth, text: row.text };
+}
+
+export async function saveMonthlyNote(
+  client: SupabaseClient,
+  uid: string,
+  note: MonthlyNote,
+): Promise<void> {
+  const input = monthlyNoteSchema.parse(note);
+  await assertUser(client, uid);
+  const { error } = await client.from("monthly_notes").upsert(
+    { user_id: uid, month: `${input.month}-01`, text: input.text },
+    { onConflict: "user_id,month" },
+  );
+  if (error) throw new Error(error.message);
 }
 
 function storagePayload(entry: EntryInput, uid: string) {
