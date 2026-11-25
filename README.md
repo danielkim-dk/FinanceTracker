@@ -11,7 +11,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key_here
 ```
 
-The legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` variable is also accepted. If both keys are set, the publishable key takes precedence. Use only a publishable or legacy anon key; the app does not need a secret or service-role key.
+The legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` variable is also accepted. If both keys are set, the publishable key takes precedence. Next.js checks both variables before bundling them into the browser. Each configured key must be a publishable or legacy anon key.
 
 For Vercel, add these two variables to the Production environment, and Preview if needed, before deploying. Redeploy after changing them because Next.js embeds public variables at build time. The deployed app connects directly to the Supabase project configured by that URL.
 
@@ -43,6 +43,8 @@ Use Node.js 22 or newer and a running Docker Desktop or compatible Docker runtim
    ```
 
    The first run downloads Supabase container images. This command deliberately switches `.env.local` to the local backend, replacing its Supabase URL and public key settings while preserving unrelated settings. Do not run it when you want to keep using your hosted project.
+
+   Docker can publish the local backend ports on all interfaces even when Supabase prints a `127.0.0.1` URL. On Docker Desktop, the loopback bridge option in Supabase's guide can still result in wildcard bindings. Check the published addresses with `docker ps`. Use the local stack on trusted networks only unless Docker restricts its ports to loopback. See [Supabase's local development guidance](https://supabase.com/docs/guides/local-development#quickstart).
 
 3. Start Next.js.
 
